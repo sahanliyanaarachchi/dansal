@@ -1,35 +1,163 @@
 <!DOCTYPE html>
-<html lang="si">
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Full Screen Image</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dansal Map</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-    }
+    body { margin: 0; font-family: sans-serif; background: #f3f3f3; }
+    #map { height: 100vh; width: 100%; }
 
-    .fullscreen {
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      background: #000;
-      position: relative;
+    .form-popup {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 1000;
     }
-
-    .fullscreen img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: center center;
+    .form-popup input, .form-popup button {
       display: block;
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px;
+    }
+
+    /* Fancy Popup CSS */
+    .popup-content {
+      font-family: sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .popup-title {
+      font-weight: bold;
+      font-size: 16px;
+      color: #d12f2f;
+      margin-bottom: 5px;
+    }
+    .popup-text {
+      margin: 2px 0;
     }
   </style>
 </head>
 <body>
-  <div class="fullscreen">
-    <img src="vesak.png" alt="Full screen image" />
+  <div id="map"></div>
+
+  <div class="form-popup" id="popupForm">
+    <h3>Add Dansal</h3>
+    <input type="text" id="dansalName" placeholder="Dansal Name" />
+    <input type="date" id="dansalDate" />
+    <input type="time" id="dansalTime" />
+    <button onclick="saveDansal()">OK</button>
+    <button onclick="closeForm()">Cancel</button>
   </div>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCeF1gnf_KJvIiRMy-_aSfIIurQq_8l1iI",
+      authDomain: "dansal-map-e0185.firebaseapp.com",
+      databaseURL: "https://dansal-map-e0185-default-rtdb.firebaseio.com",
+      projectId: "dansal-map-e0185",
+      storageBucket: "dansal-map-e0185.firebasestorage.app",
+      messagingSenderId: "1006285824505",
+      appId: "1:1006285824505:web:135f9efdecb03073a15d28",
+      measurementId: "G-C8LJT9MD3X"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // Map initialize
+    const map = L.map('map').setView([7.8731, 80.7718], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Red Marker Icon
+    const redIcon = new L.Icon({
+      iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41],
+      className: "red-marker"
+    });
+    const style = document.createElement("style");
+    style.innerHTML = `.red-marker { filter: hue-rotate(-50deg) saturate(8); }`;
+    document.head.appendChild(style);
+
+    let selectedLatLng = null;
+    const form = document.getElementById('popupForm');
+    let allMarkers = [];
+
+    map.on('click', (e) => {
+      selectedLatLng = e.latlng;
+      form.style.display = 'block';
+    });
+
+    window.closeForm = function() {
+      form.style.display = 'none';
+    };
+
+    window.saveDansal = function() {
+      const name = document.getElementById('dansalName').value;
+      const date = document.getElementById('dansalDate').value;
+      const time = document.getElementById('dansalTime').value;
+
+      if (!name || !date || !time || !selectedLatLng) return alert("Please fill all fields!");
+
+      push(ref(db, "dansal/"), {
+        name, date, time,
+        lat: selectedLatLng.lat,
+        lng: selectedLatLng.lng
+      });
+
+      alert("Dansal added successfully!");
+      form.style.display = 'none';
+      document.getElementById('dansalName').value = '';
+      document.getElementById('dansalDate').value = '';
+      document.getElementById('dansalTime').value = '';
+    };
+
+    // Load & refresh Dansal markers with fancy popup
+    const dansalRef = ref(db, "dansal/");
+    onValue(dansalRef, (snapshot) => {
+      allMarkers.forEach(m => map.removeLayer(m));
+      allMarkers = [];
+      const data = snapshot.val();
+      if (!data) return;
+
+      Object.values(data).forEach(d => {
+        const popupContent = `
+          <div class="popup-content">
+            <div class="popup-title">${d.name}</div>
+            <div class="popup-text"><b>Date:</b> ${d.date}</div>
+            <div class="popup-text"><b>Time:</b> ${d.time}</div>
+            <div class="popup-text"><b>Location:</b> ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}</div>
+          </div>
+        `;
+        const marker = L.marker([d.lat, d.lng], { icon: redIcon }).addTo(map);
+        marker.bindPopup(popupContent);
+        allMarkers.push(marker);
+      });
+    });
+  </script>
 </body>
 </html>
